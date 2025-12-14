@@ -1,0 +1,8 @@
+# Dépendances Node.js
+/node_modules
+# Fichiers de logs
+*.log
+# Fichiers de cache de l'OS (macOS)
+.DS_Store
+# Variables d'environnement
+.env
