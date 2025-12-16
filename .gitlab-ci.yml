@@ -1,0 +1,102 @@
+# Définit l'image de base pour l'exécution des Jobs.
+# Nous utilisons 'docker:dind' (Docker in Docker) pour construire des images Docker.
+image: docker:latest
+services:
+  - docker:dind
+
+# Variables Globales
+variables:
+  # L'URL du registre de conteneurs de GitLab.
+  # C'est ici que ton image Docker sera stockée.
+  CONTAINER_REGISTRY: $CI_REGISTRY
+  # Le nom complet de l'image, basé sur le chemin du projet GitLab.
+  CONTAINER_IMAGE: $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA
+  CONTAINER_IMAGE_LATEST: $CI_REGISTRY_IMAGE:latest
+
+# Définition des étapes du pipeline
+stages:
+  - build
+  - test
+  - deploy
+
+###########################################################
+# 1. ÉTAPE DE BUILD (CONSTRUCTION DE L'IMAGE DOCKER)
+###########################################################
+build_image:
+  stage: build
+  script:
+    # 1. Connexion au registre de conteneurs de GitLab
+    # $CI_REGISTRY_USER et $CI_REGISTRY_PASSWORD sont des variables intégrées de GitLab.
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    
+    # 2. Construction de l'image Docker à partir du Dockerfile
+    - docker build -t $CONTAINER_IMAGE .
+    - docker tag $CONTAINER_IMAGE $CONTAINER_IMAGE_LATEST
+
+    # 3. Poussée des deux tags vers le registre (latest et hash du commit)
+    - docker push $CONTAINER_IMAGE
+    - docker push $CONTAINER_IMAGE_LATEST
+  
+  # Le job s'exécute uniquement sur la branche principale ('main')
+  only:
+    - main
+
+###########################################################
+# 2. ÉTAPE DE TEST
+###########################################################
+unit_test:
+  stage: test
+  image: $CONTAINER_IMAGE_LATEST # Utilise l'image qui vient d'être construite
+  script:
+    # Ici, nous exécutons les tests définis dans package.json.
+    # Pour l'exemple, c'est juste `echo "No tests specified"`.
+    - npm test
+    # Dans un vrai projet, nous aurions par exemple :
+    # - npx jest
+
+###########################################################
+# 3. ÉTAPE DE DÉPLOIEMENT (VERS AWS EC2)
+###########################################################
+deploy_to_ec2:
+  stage: deploy
+  image: alpine:latest
+  variables:
+    SSH_KNOWN_HOSTS: "~/.ssh/known_hosts"
+  before_script:
+    # Install SSH client & Docker client if needed
+    - apk add --no-cache openssh-client bash
+    # Start the SSH agent
+    - eval $(ssh-agent -s)
+    # Add the private key stored in GitLab variable
+    - mkdir -p ~/.ssh
+    - echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key.pem
+    - chmod 600 ~/.ssh/deploy_key.pem
+    - ssh-add ~/.ssh/deploy_key.pem
+    # Add EC2 host to known_hosts to avoid interactive prompt
+    - ssh-keyscan -H $EC2_HOST_IP >> ~/.ssh/known_hosts
+    - chmod 644 ~/.ssh/known_hosts
+
+  script:
+    # Connect to EC2 and run deployment commands
+    - |
+      ssh $EC2_USER@$EC2_HOST_IP "
+        echo 'Connected to EC2!'
+
+        # Login to GitLab Container Registry
+        docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+
+        # Pull the latest container image
+        docker pull $CONTAINER_IMAGE_LATEST
+
+        # Stop & remove the old container if exists
+        docker stop my-node-app || true
+        docker rm my-node-app || true
+
+        # Run the new container
+        docker run -d --name my-node-app -p 80:3000 $CONTAINER_IMAGE_LATEST
+      "
+  environment:
+    name: production
+    url: http://$EC2_HOST_IP # L'URL sera affichée dans le pipeline GitLab
+  only:
+    - main
