@@ -73,6 +73,7 @@ deploy_to_ec2:
     
     # 3. Ajouter la clé privée de façon robuste
     # Traite la variable en supprimant les retours chariot Windows ('\r') et l'ajoute directement à l'agent
+    - echo "$SSH_PRIVATE_KEY" | head -n 1 # Cela affichera juste "-----BEGIN RSA PRIVATE KEY-----" dans les logs.
     - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add - 
 
     # 4. Ajouter l'hôte EC2 aux hôtes connus
