@@ -73,7 +73,7 @@ deploy_to_ec2:
 
         # Variables passed from GitLab CI
         CONTAINER_IMAGE_LATEST='registry.gitlab.com/nearito88/devops-p3/application:latest'
-        CI_REGISTRY_USER='ubuntu'
+        CI_REGISTRY_USER='nearito88'
         CI_REGISTRY_PASSWORD='glpat-QN22yClyv02meJsZywJUwW86MQp1Omo3bDVuCw.01.120to8zr8'
 
         # Docker login
