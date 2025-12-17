@@ -59,51 +59,38 @@ unit_test:
 ###########################################################
 deploy_to_ec2:
   stage: deploy
-  # Utilise l'image 'alpine/git' ou 'alpine:latest' si tu installes openssh-client (comme tu le fais)
-  image: alpine:latest 
-  variables:
-    SSH_KNOWN_HOSTS: "~/.ssh/known_hosts" # Optionnel, mais clair.
-
+  image: alpine:latest
   before_script:
-    # 1. Installer openssh-client et bash (nécessaire pour eval)
     - apk add --no-cache openssh-client bash
-    
-    # 2. Démarrer l'agent SSH
     - eval $(ssh-agent -s)
-    
-    # 3. Ajouter la clé privée de façon robuste
-    # Traite la variable en supprimant les retours chariot Windows ('\r') et l'ajoute directement à l'agent
-    - echo "$SSH_PRIVATE_KEY" | head -n 1 # Cela affichera juste "-----BEGIN RSA PRIVATE KEY-----" dans les logs.
-    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add - 
-
-    # 4. Ajouter l'hôte EC2 aux hôtes connus
+    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
     - ssh-keyscan -H $EC2_HOST_IP >> ~/.ssh/known_hosts
     - chmod 644 ~/.ssh/known_hosts
-
   script:
-    # Connect to EC2 and run deployment commands
     - |
-      ssh $EC2_USER@$EC2_HOST_IP "
+      ssh -T $EC2_USER@$EC2_HOST_IP "
         echo 'Connected to EC2!'
 
-        # Les variables sont échappées avec '\' pour être interprétées par l'EC2, pas par le Runner.
-        
-        # 1. Login to GitLab Container Registry
-        docker login -u \$CI_REGISTRY_USER -p \$CI_REGISTRY_PASSWORD \$CI_REGISTRY
-        
-        # 2. Pull the latest container image
+        # Variables passed from GitLab CI
+        CONTAINER_IMAGE_LATEST='registry.gitlab.com/nearito88/devops-p3/application:latest'
+        CI_REGISTRY_USER='ubuntu'
+        CI_REGISTRY_PASSWORD='glpat-QN22yClyv02meJsZywJUwW86MQp1Omo3bDVuCw.01.120to8zr8'
+
+        # Docker login
+        echo \$CI_REGISTRY_PASSWORD | docker login -u \$CI_REGISTRY_USER --password-stdin
+
+        # Pull the latest image
         docker pull \$CONTAINER_IMAGE_LATEST
 
-        # 3. Stop & remove the old container if exists
+        # Stop & remove old container if exists
         docker stop my-node-app || true
         docker rm my-node-app || true
 
-        # 4. Run the new container
+        # Run the new container
         docker run -d --name my-node-app -p 80:3000 \$CONTAINER_IMAGE_LATEST
       "
-      
   environment:
     name: production
-    url: http://$EC2_HOST_IP # L'URL sera affichée dans le pipeline GitLab
+    url: http://$EC2_HOST_IP
   only:
     - main
